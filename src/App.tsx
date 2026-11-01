@@ -104,7 +104,15 @@ const pendingIcon = divIcon({
   iconSize: [38, 46],
   iconAnchor: [19, 44],
 });
-const center: [number, number] = [37.5665, 126.978];
+const landmarkIcon = divIcon({
+  className: "pin-wrap",
+  html: `<div class="landmark-pin"><img src="${knaufLogo}" alt="" /></div>`,
+  iconSize: [76, 52],
+  iconAnchor: [38, 50],
+});
+// 크나우프 서울 본사: 서울특별시 강남구 삼성동 테헤란로87길 36
+const knaufHq: [number, number] = [37.5102336492314, 127.058597240146];
+const center = knaufHq;
 
 function MapActions({
   target,
@@ -130,8 +138,27 @@ function MapActions({
     map.flyTo(center, zoom, { duration: 0.7 });
   }, [target, map]);
   useEffect(() => {
-    const timer = setTimeout(() => map.invalidateSize(), 150);
-    return () => clearTimeout(timer);
+    // 레이아웃이 잡히는 동안 크기가 바뀔 때마다 본사 위치를 중앙에 다시 맞춘다.
+    let active = true;
+    const recenter = () => {
+      if (!active) return;
+      map.invalidateSize();
+      map.setView(knaufHq, map.getZoom(), { animate: false });
+    };
+    const observer = new ResizeObserver(recenter);
+    observer.observe(map.getContainer());
+    const stop = () => {
+      active = false;
+      observer.disconnect();
+    };
+    const timer = setTimeout(stop, 1500);
+    map.once("dragstart", stop);
+    recenter();
+    return () => {
+      clearTimeout(timer);
+      stop();
+      map.off("dragstart", stop);
+    };
   }, [map]);
   useMapEvents({
     click: (event) => {
@@ -1197,6 +1224,12 @@ function App() {
                       target={target}
                       picking={picking}
                       onPick={previewPin}
+                    />
+                    <Marker
+                      position={knaufHq}
+                      icon={landmarkIcon}
+                      interactive={false}
+                      keyboard={false}
                     />
                     {visible.map((place) => (
                       <Marker

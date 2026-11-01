@@ -545,6 +545,35 @@
   background: #f59e0b;
   font-size: 18px;
 }
+.landmark-pin {
+  position: relative;
+  width: 76px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px #0f172a47;
+}
+.landmark-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  transform: translateX(-50%) rotate(45deg);
+}
+.leaflet-container .landmark-pin img {
+  position: relative;
+  z-index: 1;
+  width: 62px;
+  height: auto;
+}
 .map-legend {
   position: absolute;
   left: 16px;
