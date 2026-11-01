@@ -86,6 +86,65 @@
   color: var(--accent-dark);
   font-size: 12px;
   font-weight: 600;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.comment-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.signup-photo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.signup-photo .avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 18px;
+}
+.photo-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.photo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.photo-field small {
+  font-weight: 400;
+  color: var(--muted);
+}
+.photo-actions {
+  display: flex;
+  gap: 8px;
+}
+.photo-preview,
+.place-photo {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+.place-photo {
+  margin-bottom: 12px;
 }
 
 /* Buttons */

@@ -7,6 +7,7 @@ export type Profile = {
   account?: string | null;
   approved: boolean;
   role: "admin" | "member";
+  avatar_path?: string | null;
   created_at: string;
 };
 export type Place = {
@@ -20,6 +21,7 @@ export type Place = {
   parking_free?: boolean | null;
   fee_per_30min?: number | null;
   free_minutes?: number | null;
+  photo_path?: string | null;
   lat: number;
   lng: number;
   author_id: string;

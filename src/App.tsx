@@ -22,7 +22,11 @@ import {
   Heart,
   Navigation,
   Check,
+  ImagePlus,
 } from "lucide-react";
+import { PHOTO_BUCKET, photoSrc, resizePhoto } from "./photo";
+import type { PendingPhoto } from "./photo";
+import Avatar from "./Avatar";
 import {
   supabase,
   seedPlaces,
@@ -117,6 +121,9 @@ function App() {
   const [picking, setPicking] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [draft, setDraft] = useState<Partial<Place> | null>(null);
+  const [photoChange, setPhotoChange] = useState<
+    PendingPhoto | "remove" | null
+  >(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const reverseRequest = useRef<AbortController | null>(null);
   const [pendingPin, setPendingPin] = useState<{
@@ -554,8 +561,17 @@ function App() {
     setSelected(null);
     setListOpen(false);
     cancelPicking();
+    setPhotoChange(null);
     setDraft({ category: "restaurant" });
     setView("map");
+  }
+  async function choosePhoto(file: File | undefined) {
+    if (!file) return;
+    try {
+      setPhotoChange(await resizePhoto(file));
+    } catch (error) {
+      setNotice(message(error));
+    }
   }
   function toggleSaved(id: string) {
     setSaved((previous) =>
@@ -611,26 +627,49 @@ function App() {
       return;
     }
     setBusy(true);
+    const oldPhoto = draft.photo_path ?? null;
+    let photo_path = oldPhoto;
+    let uploaded: string | null = null;
     try {
+      if (photoChange === "remove") photo_path = null;
+      else if (photoChange) {
+        if (supabase) {
+          uploaded = `${profile.id}/${crypto.randomUUID()}.jpg`;
+          const { error } = await supabase.storage
+            .from(PHOTO_BUCKET)
+            .upload(uploaded, photoChange.blob, {
+              contentType: "image/jpeg",
+              cacheControl: "31536000",
+            });
+          if (error) {
+            uploaded = null;
+            throw error;
+          }
+          photo_path = uploaded;
+        } else photo_path = photoChange.url;
+      }
+      const record = { ...data, photo_path };
       let place: Place;
       if (supabase) {
         const result = draft.id
           ? await supabase
               .from("places")
-              .update(data)
+              .update(record)
               .eq("id", draft.id)
               .select()
               .single()
           : await supabase
               .from("places")
-              .insert({ ...data, author_id: profile.id })
+              .insert({ ...record, author_id: profile.id })
               .select()
               .single();
         if (result.error) throw result.error;
         place = result.data as Place;
+        if (oldPhoto && oldPhoto !== photo_path)
+          void supabase.storage.from(PHOTO_BUCKET).remove([oldPhoto]);
       } else
         place = {
-          ...data,
+          ...record,
           id: draft.id ?? crypto.randomUUID(),
           author_id: draft.author_id ?? profile.id,
           created_at: draft.created_at ?? nowIso(),
@@ -645,6 +684,8 @@ function App() {
       choose(place);
       setNotice(draft.id ? "장소를 수정했습니다." : "새 장소를 공유했습니다.");
     } catch (error) {
+      if (uploaded && supabase)
+        void supabase.storage.from(PHOTO_BUCKET).remove([uploaded]);
       setNotice(message(error));
     } finally {
       setBusy(false);
@@ -661,6 +702,8 @@ function App() {
           .delete()
           .eq("id", place.id);
         if (error) throw error;
+        if (place.photo_path)
+          void supabase.storage.from(PHOTO_BUCKET).remove([place.photo_path]);
       }
       setPlaces((previous) => previous.filter((item) => item.id !== place.id));
       setComments((previous) =>
@@ -681,6 +724,7 @@ function App() {
   async function authenticate(
     mode: "login" | "signup",
     form: FormData,
+    avatar: PendingPhoto | null = null,
   ): Promise<string | null> {
     const account = String(form.get("account") ?? "").trim();
     const password = String(form.get("password") ?? "");
@@ -703,6 +747,26 @@ function App() {
             options: { data: { name, department, account } },
           });
           if (created.error) throw created.error;
+          const userId = created.data.user?.id;
+          if (avatar && userId && created.data.session) {
+            // 사진 실패가 가입 자체를 막지 않도록 무시한다(나중에 다시 등록 가능한 선택 항목).
+            const path = `${userId}/${crypto.randomUUID()}.jpg`;
+            const uploadResult = await supabase.storage
+              .from(PHOTO_BUCKET)
+              .upload(path, avatar.blob, {
+                contentType: "image/jpeg",
+                cacheControl: "31536000",
+              });
+            if (!uploadResult.error) {
+              const saved = await supabase
+                .from("profiles")
+                .update({ avatar_path: path })
+                .eq("id", userId);
+              if (saved.error)
+                void supabase.storage.from(PHOTO_BUCKET).remove([path]);
+              else void refresh(userId);
+            }
+          }
           if (created.data.session) return null;
         }
         const result = await supabase.auth.signInWithPassword({
@@ -715,6 +779,7 @@ function App() {
       let person: Profile | undefined;
       if (mode === "signup") {
         person = await demoRegister(account, password, name, department);
+        if (avatar) person = { ...person, avatar_path: avatar.url };
         setProfiles((previous) => [...previous, person as Profile]);
       } else {
         const id = await demoSignIn(account, password);
@@ -994,9 +1059,10 @@ function App() {
             </nav>
             <div className="header-right">
               <div className="account">
-                <span className="avatar">
-                  {profile?.name.slice(0, 1) ?? "?"}
-                </span>
+                <Avatar
+                  name={profile?.name ?? ""}
+                  path={profile?.avatar_path}
+                />
                 <span>{profile?.name}</span>
               </div>
               <button
@@ -1142,6 +1208,9 @@ function App() {
                         {card.rows.map((row, index) => (
                           <li key={row.key}>
                             <span className="rank-no">{index + 1}</span>
+                            {row.person && (
+                              <Avatar name={row.name} path={row.avatar} />
+                            )}
                             <span className="rank-name">
                               {row.name}
                               {row.sub && <small>{row.sub}</small>}
@@ -1173,9 +1242,10 @@ function App() {
                       <tr key={person.id}>
                         <td>
                           <span className="table-person">
-                            <span className="avatar">
-                              {person.name.slice(0, 1)}
-                            </span>
+                            <Avatar
+                              name={person.name}
+                              path={person.avatar_path}
+                            />
                             {person.name}
                             {person.role === "admin" && <small>관리자</small>}
                           </span>
@@ -1575,6 +1645,14 @@ function App() {
                           <X size={18} />
                         </button>
                       </div>
+                      {photoSrc(current.photo_path) && (
+                        <img
+                          className="place-photo"
+                          src={photoSrc(current.photo_path) ?? undefined}
+                          alt={`${current.name} 사진`}
+                          loading="lazy"
+                        />
+                      )}
                       <h2>{current.name}</h2>
                       {current.address && (
                         <p className="address">{current.address}</p>
@@ -1665,7 +1743,10 @@ function App() {
                               className="icon-button"
                               title="장소 수정"
                               aria-label="장소 수정"
-                              onClick={() => setDraft(current)}
+                              onClick={() => {
+                                setPhotoChange(null);
+                                setDraft(current);
+                              }}
                             >
                               <Pencil size={16} />
                             </button>
@@ -1684,29 +1765,38 @@ function App() {
                       <div className="comment-list">
                         {comments
                           .filter((item) => item.place_id === current.id)
-                          .map((comment) => (
-                            <div className="comment" key={comment.id}>
-                              <div className="comment-head">
-                                <b>
-                                  {profiles.find(
-                                    (person) => person.id === comment.author_id,
-                                  )?.name ?? "멤버"}
-                                </b>
-                                {comment.author_id === profile?.id && (
-                                  <button
-                                    className="icon-button danger"
-                                    disabled={busy}
-                                    title="내 댓글 삭제"
-                                    aria-label="내 댓글 삭제"
-                                    onClick={() => void deleteComment(comment)}
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
-                                )}
+                          .map((comment) => {
+                            const author = profiles.find(
+                              (person) => person.id === comment.author_id,
+                            );
+                            return (
+                              <div className="comment" key={comment.id}>
+                                <div className="comment-head">
+                                  <b className="comment-author">
+                                    <Avatar
+                                      name={author?.name ?? "멤"}
+                                      path={author?.avatar_path}
+                                    />
+                                    {author?.name ?? "멤버"}
+                                  </b>
+                                  {comment.author_id === profile?.id && (
+                                    <button
+                                      className="icon-button danger"
+                                      disabled={busy}
+                                      title="내 댓글 삭제"
+                                      aria-label="내 댓글 삭제"
+                                      onClick={() =>
+                                        void deleteComment(comment)
+                                      }
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  )}
+                                </div>
+                                <p>{comment.body}</p>
                               </div>
-                              <p>{comment.body}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                       </div>
                       <form className="comment-form" onSubmit={addComment}>
                         <input
@@ -1864,6 +1954,54 @@ function App() {
                       placeholder="메뉴, 이용 시간, 요금 등 공유할 내용"
                     />
                   </label>
+                  <div className="photo-field">
+                    <span>사진 (선택, 1장)</span>
+                    {(() => {
+                      const preview =
+                        photoChange === "remove"
+                          ? null
+                          : (photoChange?.url ?? photoSrc(draft.photo_path));
+                      return (
+                        <>
+                          {preview && (
+                            <img
+                              className="photo-preview"
+                              src={preview}
+                              alt="등록할 사진 미리보기"
+                            />
+                          )}
+                          <div className="photo-actions">
+                            <label className="secondary photo-pick">
+                              <ImagePlus size={16} />
+                              {preview ? "사진 변경" : "사진 추가"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={(event) => {
+                                  void choosePhoto(event.target.files?.[0]);
+                                  event.target.value = "";
+                                }}
+                              />
+                            </label>
+                            {preview && (
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => setPhotoChange("remove")}
+                              >
+                                사진 삭제
+                              </button>
+                            )}
+                          </div>
+                          <small>
+                            자동으로 작게 줄여서 저장됩니다. 음식·주차장 외에
+                            사람 얼굴이 나오지 않게 해 주세요.
+                          </small>
+                        </>
+                      );
+                    })()}
+                  </div>
                   {draft.category === "parking" && (
                     <fieldset className="category-choice fee-choice">
                       <legend>요금 (선택)</legend>

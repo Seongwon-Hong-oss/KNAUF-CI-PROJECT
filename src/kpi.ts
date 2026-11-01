@@ -113,6 +113,8 @@ export type RankRow = {
   name: string;
   sub?: string;
   value: string;
+  person?: boolean;
+  avatar?: string | null;
 };
 export type RankCard = { title: string; rows: RankRow[] };
 
@@ -143,6 +145,8 @@ export function funRankCards(input: {
               name: member.name,
               sub: member.department,
               value: `${value}${unit}`,
+              person: true,
+              avatar: member.avatar_path,
             },
           ]
         : [];
