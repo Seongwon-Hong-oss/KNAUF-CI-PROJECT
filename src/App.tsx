@@ -104,14 +104,29 @@ const pendingIcon = divIcon({
   iconSize: [38, 46],
   iconAnchor: [19, 44],
 });
-const landmarkIcon = divIcon({
-  className: "pin-wrap",
-  html: `<div class="landmark-pin"><img src="${knaufLogo}" alt="" /></div>`,
-  iconSize: [76, 52],
-  iconAnchor: [38, 50],
-});
-// 크나우프 서울 본사: 서울특별시 강남구 삼성동 테헤란로87길 36
-const knaufHq: [number, number] = [37.5102336492314, 127.058597240146];
+// 크나우프 사무소·공장 위치(도로명 주소 기준 좌표). 서울사무소는 지도의 기본 중심이다.
+const knaufSites: { name: string; position: [number, number] }[] = [
+  { name: "서울사무소", position: [37.5102336492314, 127.058597240146] },
+  { name: "부산사무소", position: [35.1659324519479, 129.132411521392] },
+  { name: "광주사무소", position: [35.1574884694527, 126.850895183332] },
+  { name: "대전사무소", position: [36.36227052, 127.3364202] },
+  { name: "대구사무소", position: [35.8744005686659, 128.6156342576] },
+  { name: "울산공장", position: [35.52391561, 129.35723121] },
+  { name: "여수공장", position: [34.86158581, 127.75989121] },
+  { name: "당진공장", position: [36.96273157, 126.77817792] },
+].map((site) => ({
+  ...site,
+  position: site.position as [number, number],
+}));
+const landmarkIcons = knaufSites.map((site) =>
+  divIcon({
+    className: "pin-wrap",
+    html: `<div class="landmark-pin"><img src="${knaufLogo}" alt="" /><span>${site.name}</span></div>`,
+    iconSize: [84, 64],
+    iconAnchor: [42, 62],
+  }),
+);
+const knaufHq = knaufSites[0].position;
 const center = knaufHq;
 
 function MapActions({
@@ -1225,12 +1240,15 @@ function App() {
                       picking={picking}
                       onPick={previewPin}
                     />
-                    <Marker
-                      position={knaufHq}
-                      icon={landmarkIcon}
-                      interactive={false}
-                      keyboard={false}
-                    />
+                    {knaufSites.map((site, index) => (
+                      <Marker
+                        key={site.name}
+                        position={site.position}
+                        icon={landmarkIcons[index]}
+                        interactive={false}
+                        keyboard={false}
+                      />
+                    ))}
                     {visible.map((place) => (
                       <Marker
                         key={place.id}
