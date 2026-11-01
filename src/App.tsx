@@ -385,11 +385,11 @@ function App() {
       Math.abs(data.lat) > 90 ||
       Math.abs(data.lng) > 180
     ) {
-      setNotice("상호명을 검색하거나 지도에서 위치를 선택해 주세요.");
+      setNotice("지도에서 위치를 선택해 주세요.");
       return;
     }
-    if (!data.name || !data.note) {
-      setNotice("장소 이름과 추천 메모를 입력해 주세요.");
+    if (!data.name || !data.address || !data.note) {
+      setNotice("장소 이름, 주소, 추천 메모를 입력해 주세요.");
       return;
     }
     setBusy(true);
@@ -1500,9 +1500,10 @@ function App() {
                     />
                   </label>
                   <label>
-                    주소 (선택)
+                    주소
                     <input
                       name="address"
+                      required
                       maxLength={200}
                       value={draft.address ?? ""}
                       onChange={(event) =>
