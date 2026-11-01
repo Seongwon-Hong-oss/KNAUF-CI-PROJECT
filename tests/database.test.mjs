@@ -47,6 +47,12 @@ test("instant signup, ratings, parking fees and access policies", async () => {
         "utf8",
       ),
     );
+    await db.exec(
+      await readFile(
+        new URL("../supabase/007_kpi.sql", import.meta.url),
+        "utf8",
+      ),
+    );
     const accounts = [
       [admin, "Admin", "Seoul office"],
       [employee, "employee1", "Ulsan Plant"],
@@ -297,6 +303,39 @@ test("instant signup, ratings, parking fees and access policies", async () => {
         0,
       );
     });
+    await asUser(employee, async () => {
+      await db.query(
+        "insert into usage_logs (place_id, author_id, actual_fee, usual_fee) values ($1,$2,0,6000)",
+        [place, employee],
+      );
+      await assert.rejects(
+        db.query(
+          "insert into usage_logs (place_id, author_id) values ($1,$2)",
+          [place, admin],
+        ),
+        /row-level security/,
+      );
+      assert.equal((await db.query("select * from usage_logs")).rows.length, 1);
+      await db.query(
+        "insert into parking_surveys (author_id, phase, monthly_fee) values ($1,'baseline',100000)",
+        [employee],
+      );
+      assert.equal(
+        (await db.query("select * from survey_summary()")).rows[0].avg_fee,
+        null,
+      );
+      await assert.rejects(
+        db.query("insert into kpi_targets (key, value) values ('monthly_usage', 10)"),
+        /row-level security/,
+      );
+      await assert.rejects(
+        db.query("update places set fee_per_30min = -1 where id=$1", [place]),
+        /places_fee_valid/,
+      );
+    });
+    await asUser(admin, () =>
+      db.query("insert into kpi_targets (key, value) values ('monthly_usage', 10)"),
+    );
     await asUser(admin, () =>
       db.query("select set_employee_approval($1, false)", [employee]),
     );
