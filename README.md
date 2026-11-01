@@ -1,10 +1,10 @@
-# KNAUF C.I. project | 멤버 맛집·주차장 지도
+# KNAUF 2026 CI KAiZEN CIRCLE | 멤버 맛집·주차장 지도
 
-React + TypeScript + Leaflet/MapLibre + Supabase 기반 모바일 웹 앱. 제공된 크나우프 로고와 파란색 테마를 적용했으며 Vercel에서 정적 웹 앱으로 배포할 수 있습니다.
+React + TypeScript + Kakao Maps + Supabase 기반 모바일 웹 앱. 제공된 크나우프 로고와 파란색 테마를 적용했으며 Vercel에서 정적 웹 앱으로 배포할 수 있습니다.
 
 ## 현재 가능한 기능
 
-- 장소 종류 선택 후 지도에서 위치를 선택해 맛집·주차장 등록 (위·경도 입력 없음, 주소는 필수이며 위치 선택 시 자동 입력)
+- 장소 종류 선택 후 상호명 검색(예: 스타벅스 강남점), 주소 입력 또는 지도에서 위치 선택으로 맛집·주차장 등록 (위·경도 입력 없음, 주소는 필수). 선택한 위치는 핀으로 먼저 보여주고 확인 후 등록 화면으로 넘어갑니다.
 - 파란색 식당 핀과 남색 P 핀, 종류 필터, 이름·주소·메모 검색
 - 추천 메모, 가격 또는 추가 요금 안내(선택, 예: 시간당 3,000원 / 최초 30분 무료), 댓글, 장소 수정·삭제
 - 장소별 좋아요(계정당 1회, 다시 누르면 취소)
@@ -12,15 +12,19 @@ React + TypeScript + Leaflet/MapLibre + Supabase 기반 모바일 웹 앱. 제�
 - 장소별 네이버 지도 검색 및 구글 지도 좌표 링크
 - 현재 위치 이동, 본인 댓글 삭제
 - 모바일은 지도를 전체 화면으로 두고 장소 목록·상세를 하단 시트로 표시
-- 처음 접속 시 크나우프 로고와 `C.I. project`만 보이는 로그인 화면. 계정(일반 ID)·비밀번호로 로그인
+- 처음 접속 시 크나우프 로고와 `2026 CI KAiZEN CIRCLE`만 보이는 로그인 화면. 계정(일반 ID)·비밀번호로 로그인
 - 계정 등록은 이름·사무소(Seoul office / Busan office / Gwangju office / Daejeon office / Daegu office / Ulsan Plant / Dangjin Plant / Yosu Plant 드롭다운)·계정·비밀번호만으로 완료. 계정이 중복되지 않으면 바로 등록 (이메일·이메일 인증·관리자 승인 없음, 대소문자 구분 없음)
 - `Admin` 계정으로 등록한 사람은 자동으로 관리자가 됩니다.
 - 대시보드(모든 멤버 열람 가능, 관리자 계정은 표시되지 않음): 멤버 수, 장소 수, 이용 중 멤버 수, 가장 많은 좋아요를 받은 장소·멤버, 가장 많이 등록한 멤버(각 TOP 3), 멤버별 등록 수와 기여율. 접근 중지·재개는 관리자만 가능
 - 즐겨찾기는 각 브라우저에 저장. 장소·멤버·댓글은 Supabase 연결 시 공용 데이터베이스에 저장
 
-네이버/구글 지도는 **외부 링크**입니다. 기본 내장 지도는 OSM 데이터를 사용하는 **OpenFreeMap Positron**으로, 단순한 밝은 스타일입니다. 지도 우측 메뉴에서 기존 OpenStreetMap 지도도 선택할 수 있습니다. 심플 지도에는 WebGL이 필요하며, 지원되지 않거나 로딩에 실패하면 기본 지도로 전환하세요. 네이버/구글 내장 지도로 변경하려면 해당 플랫폼 계정, API 키, 도메인 등록과 요금 확인이 추가로 필요합니다.
+네이버/구글 지도는 **외부 링크**입니다. 앱 안의 지도는 **카카오맵 JavaScript SDK**이며, 상호명 검색·주소 ↔ 좌표 변환도 카카오 로컬 서비스를 사용합니다.
 
-장소 등록은 장소 종류를 고른 뒤 지도에서 위치를 선택하는 방식입니다. 위치를 선택하면 OpenStreetMap Nominatim 공개 서비스에서 해당 좌표의 주소를 조회해 주소 칸에 자동으로 채우며, 수정할 수 있습니다. 좌표만 외부 서버로 전송되고 조회에 실패하면 직접 입력합니다. 지점에 따라 도로명 주소 대신 동 단위 주소가 나올 수 있습니다. `VITE_REVERSE_GEOCODER_URL`로 호환되는 다른 서버를 지정할 수 있습니다.
+카카오맵 설정:
+
+1. [Kakao Developers](https://developers.kakao.com)에서 앱을 만들고 **제품 설정 > 카카오맵**을 활성화합니다(첫 번째로 활성화한 앱만 일간 무료 쿼터 제공).
+2. **앱 설정 > 플랫폼 키 > JavaScript 키**의 사이트 도메인에 배포 주소와 `http://localhost:5173`을 등록합니다.
+3. JavaScript 키를 `VITE_KAKAO_JS_KEY` 환경변수(`.env.local`, Vercel)에 넣습니다. 등록한 도메인에서만 쓸 수 있는 키이며 REST 키는 앱에 넣지 마세요.
 
 ## 무료 이용에 대한 주의
 
@@ -28,9 +32,7 @@ React + TypeScript + Leaflet/MapLibre + Supabase 기반 모바일 웹 앱. 제�
 
 - [Vercel Hobby 정책](https://vercel.com/docs/plans/hobby)
 - [Supabase 무료 플랜](https://supabase.com/pricing): 무료 범위 내 이용 가능. 500MB DB, 50,000 월간 활성 사용자, 5GB 송신량, 비활성 1주 후 프로젝트 일시정지 가능. 정책은 바뀔 수 있습니다.
-- [OpenFreeMap](https://openfreemap.org/): 공식 안내상 상업 이용 허용, API 키·계정·요청 수 제한 없이 무료. 출처 표시를 유지해야 하며 SLA는 없습니다. Positron 스타일을 사용합니다.
-- [Nominatim 공개 API](https://operations.osmfoundation.org/policies/nominatim/): 지도에서 위치를 선택할 때만 좌표를 1회 조회합니다(초당 1회 이하, 대량·자동 조회 금지). 가용성을 보장하지 않습니다.
-- [OpenStreetMap 타일 정책](https://operations.osmfoundation.org/policies/tiles/): 출처 표시 유지, 대량 다운로드·오프라인 사전 저장 금지. 타일 서비스는 SLA나 무제한 사용을 보장하지 않으며, 트래픽 증가 시 다른 제공자가 필요할 수 있습니다.
+- [Kakao Maps API](https://developers.kakao.com/docs/latest/ko/getting-started/quota): 지도 표시와 장소·주소 검색에 사용. 일간 무료 쿼터는 첫 번째로 활성화한 앱에만 제공되며 약관·쿼터는 바뀔 수 있습니다.
 - 이메일을 쓰지 않으므로 가입 메일 발송이 없어 SMTP 설정과 발송 한도 문제가 없습니다.
 - 멤버 이름·사무소와 해외 클라우드 저장은 회사 개인정보·보안 정책 검토 후 사용하세요. 이 앱은 공식 사내 SSO 연동이 아닙니다.
 
@@ -73,7 +75,7 @@ $env:Path = "$nodeHome;$env:Path"
 2. 프로젝트를 GitHub 저장소에 올리고 Vercel에서 Import 합니다. Git 커밋이나 저장소 생성은 이 작업에서 하지 않았습니다.
 3. 이 폴더를 포함한 상위 저장소라면 Root Directory를 `team-map`으로 지정합니다.
 4. Framework: Vite, Build: `npm run build`, Output: `dist`. [vercel.json](vercel.json)에 동일한 설정이 있습니다.
-5. Vercel Environment Variables에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 등록하고 배포합니다. 환경변수 변경 후 재배포가 필요합니다.
+5. Vercel Environment Variables에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_KAKAO_JS_KEY`를 등록하고 배포합니다. 환경변수 변경 후 재배포가 필요합니다.
 6. 배포 URL로 접속해 로그인 화면이 나오는지 확인하고, 실제 계정 등록·로그인·장소 등록을 테스트합니다. 환경변수가 누락되면 앱이 로컬 모드로 배포되어 계정과 장소가 각 브라우저에만 저장되고 `Admin` / `1234567890` 테스트 계정으로 누구나 로그인할 수 있습니다. 로그인 후 관리 화면이 멤버 모두의 데이터를 보여주지 않는다면 Vercel 환경변수를 다시 확인해 재배포하세요.
 
 외부 계정 생성, 키 발급, 실제 Vercel 배포는 아직 수행하지 않았습니다. 운영 전에 관리자·일반 멤버·접근 중지 멤버 각각의 실제 계정으로 확인해야 합니다.
