@@ -51,7 +51,6 @@ import type { Office } from "./data";
 import type { Place, Profile, Comment, Like } from "./data";
 import { naverSearchUrl, openNaverNavigation } from "./naverNavigation";
 import knaufLogo from "./assets/knauf-logo.png";
-import PlaceSearch from "./PlaceSearch";
 import { reverseGeocode } from "./reverseGeocode";
 import Login from "./Login";
 import "leaflet/dist/leaflet.css";
@@ -187,8 +186,13 @@ function App() {
   const allowed = !!profile?.approved;
   const admin = profile?.role === "admin";
   const signedOut = demo ? !profile : !authUser;
-  const stats = statistics(places, profiles);
-  const ranks = rankings(places, profiles, likes);
+  const adminIds = new Set(
+    profiles.filter((item) => item.role === "admin").map((item) => item.id),
+  );
+  const members = profiles.filter((item) => item.role !== "admin");
+  const memberPlaces = places.filter((item) => !adminIds.has(item.author_id));
+  const stats = statistics(memberPlaces, members);
+  const ranks = rankings(memberPlaces, members, likes);
   const visible = places.filter(
     (place) =>
       (filter === "all" ||
@@ -726,14 +730,14 @@ function App() {
                 <div>
                   <span>등록 멤버</span>
                   <strong>
-                    {profiles.length}
+                    {members.length}
                     <small>명</small>
                   </strong>
                 </div>
                 <div>
                   <span>공유한 장소</span>
                   <strong>
-                    {places.length}
+                    {memberPlaces.length}
                     <small>곳</small>
                   </strong>
                 </div>
@@ -747,7 +751,7 @@ function App() {
                 <div>
                   <span>이용 중 멤버</span>
                   <strong>
-                    {profiles.filter((item) => item.approved).length}
+                    {members.filter((item) => item.approved).length}
                     <small>명</small>
                   </strong>
                 </div>
@@ -1015,16 +1019,21 @@ function App() {
                             )}
                             <div className="place-footer">
                               <span>
-                                <span className="tiny-avatar">
-                                  {profiles
-                                    .find(
+                                {!adminIds.has(place.author_id) && (
+                                  <>
+                                    <span className="tiny-avatar">
+                                      {profiles
+                                        .find(
+                                          (person) =>
+                                            person.id === place.author_id,
+                                        )
+                                        ?.name.slice(0, 1) ?? "?"}
+                                    </span>
+                                    {profiles.find(
                                       (person) => person.id === place.author_id,
-                                    )
-                                    ?.name.slice(0, 1) ?? "?"}
-                                </span>
-                                {profiles.find(
-                                  (person) => person.id === place.author_id,
-                                )?.name ?? "멤버"}
+                                    )?.name ?? "멤버"}
+                                  </>
+                                )}
                                 <span className="date">
                                   {new Date(
                                     place.created_at,
@@ -1307,10 +1316,14 @@ function App() {
                       </div>
                       <div className="detail-author">
                         <span>
-                          공유한 멤버 ·{" "}
-                          {profiles.find(
-                            (person) => person.id === current.author_id,
-                          )?.name ?? "멤버"}
+                          {!adminIds.has(current.author_id) && (
+                            <>
+                              공유한 멤버 ·{" "}
+                              {profiles.find(
+                                (person) => person.id === current.author_id,
+                              )?.name ?? "멤버"}
+                            </>
+                          )}
                         </span>
                         {(admin || current.author_id === profile?.id) && (
                           <span>
@@ -1414,33 +1427,6 @@ function App() {
                     <X size={21} />
                   </button>
                 </div>
-                {!draft.id && (
-                  <PlaceSearch
-                    onSelect={(place) => {
-                      setDraft((previous) => ({ ...previous, ...place }));
-                      setTarget([place.lat, place.lng]);
-                    }}
-                  />
-                )}
-                <div
-                  className={`location-field ${draft.lat !== undefined && draft.lng !== undefined ? "is-set" : ""}`}
-                >
-                  <MapPin size={18} />
-                  <span>
-                    {draft.lat !== undefined && draft.lng !== undefined
-                      ? "위치가 선택되었습니다"
-                      : "위치를 선택해 주세요"}
-                  </span>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setPicking(true)}
-                  >
-                    {draft.lat !== undefined && draft.lng !== undefined
-                      ? "지도에서 변경"
-                      : "지도에서 선택"}
-                  </button>
-                </div>
                 <form onSubmit={savePlace}>
                   <fieldset className="category-choice">
                     <legend>장소 종류</legend>
@@ -1477,6 +1463,25 @@ function App() {
                       주차장
                     </label>
                   </fieldset>
+                  <div
+                    className={`location-field ${draft.lat !== undefined && draft.lng !== undefined ? "is-set" : ""}`}
+                  >
+                    <MapPin size={18} />
+                    <span>
+                      {draft.lat !== undefined && draft.lng !== undefined
+                        ? "위치가 선택되었습니다"
+                        : "위치를 선택해 주세요"}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setPicking(true)}
+                    >
+                      {draft.lat !== undefined && draft.lng !== undefined
+                        ? "지도에서 변경"
+                        : "지도에서 선택"}
+                    </button>
+                  </div>
                   <label>
                     장소 이름
                     <input
@@ -1509,7 +1514,7 @@ function App() {
                       placeholder={
                         addressLoading
                           ? "주소를 불러오는 중..."
-                          : "지도에서 위치를 찍으면 자동 입력됩니다"
+                          : "주소 입력 또는 지도에서 선택"
                       }
                     />
                   </label>
@@ -1540,7 +1545,7 @@ function App() {
                     />
                   </label>
                   <div className="form-footer">
-                    <span>작성자 {profile?.name}</span>
+                    <span>{!admin && <>작성자 {profile?.name}</>}</span>
                     <button className="primary" disabled={busy}>
                       {busy
                         ? "저장 중..."
