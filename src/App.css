@@ -578,28 +578,61 @@
 }
 .pick-banner {
   position: absolute;
-  top: 60px;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 500;
-  width: max-content;
+  width: 380px;
   max-width: calc(100% - 32px);
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 8px 14px;
-  background: var(--navy);
-  color: #fff;
-  border-radius: 6px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 10px 12px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
   box-shadow: 0 4px 14px #0f172a40;
   font-size: 13px;
 }
-.pick-banner .icon-button {
-  color: #cbd5e1;
+.pick-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
 }
-.pick-banner .icon-button:hover:not(:disabled) {
-  background: #ffffff22;
-  color: #fff;
+.pick-head span {
+  flex: 1;
+}
+.pick-address {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  border-radius: 6px;
+  color: var(--navy);
+  line-height: 1.45;
+  word-break: keep-all;
+}
+.pick-actions {
+  display: flex;
+  gap: 8px;
+  padding-right: 4px;
+}
+.pick-actions button {
+  flex: 1;
+}
+.pin-drop {
+  animation: pin-drop 0.35s ease-out;
+}
+@keyframes pin-drop {
+  from {
+    transform: translateY(-28px) scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 .picking .leaflet-container {
   cursor: crosshair;
@@ -1393,8 +1426,12 @@ tbody tr:last-child td {
     display: none;
   }
   .pick-banner {
-    top: auto;
-    bottom: 24px;
+    left: 12px;
+    right: 12px;
+    bottom: 16px;
+    width: auto;
+    max-width: none;
+    transform: none;
     font-size: 13px;
   }
   .detail {

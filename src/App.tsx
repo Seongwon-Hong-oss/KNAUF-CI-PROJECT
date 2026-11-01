@@ -98,6 +98,12 @@ const draftIcon = divIcon({
   iconSize: [38, 46],
   iconAnchor: [19, 44],
 });
+const pendingIcon = divIcon({
+  className: "pin-wrap",
+  html: '<div class="map-pin draft-pin pin-drop">+</div>',
+  iconSize: [38, 46],
+  iconAnchor: [19, 44],
+});
 const center: [number, number] = [37.5665, 126.978];
 
 function MapActions({
@@ -169,6 +175,14 @@ function App() {
   const [draft, setDraft] = useState<Partial<Place> | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const reverseRequest = useRef<AbortController | null>(null);
+  const [pendingPin, setPendingPin] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [pendingAddress, setPendingAddress] = useState("");
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRequest = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!demo);
   const [notice, setNotice] = useState("");
@@ -324,7 +338,71 @@ function App() {
     setCommentText("");
     setListOpen(false);
   }
-  function pickLocation(lat: number, lng: number) {
+  function stopPreviewRequest() {
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingRequest.current?.abort();
+  }
+  // 지도에 임시 핀만 꽂고, 확인 버튼을 눌러야 등록 화면으로 넘어간다.
+  function previewPin(lat: number, lng: number) {
+    const pin = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+    stopPreviewRequest();
+    setPendingPin(pin);
+    setPendingAddress("");
+    setPendingLoading(true);
+    const controller = new AbortController();
+    pendingRequest.current = controller;
+    pendingTimer.current = setTimeout(() => {
+      void reverseGeocode(pin.lat, pin.lng, controller.signal).then(
+        (address) => {
+          if (controller.signal.aborted) return;
+          setPendingAddress(address);
+          setPendingLoading(false);
+        },
+      );
+    }, 600);
+  }
+  function clearPreview() {
+    stopPreviewRequest();
+    setPendingPin(null);
+    setPendingAddress("");
+    setPendingLoading(false);
+  }
+  function cancelPicking() {
+    clearPreview();
+    setPicking(false);
+  }
+  function startPicking() {
+    clearPreview();
+    setPicking(true);
+  }
+  function pinMyLocation() {
+    if (!navigator.geolocation) {
+      setNotice("이 브라우저에서는 위치를 사용할 수 없습니다.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        previewPin(latitude, longitude);
+        setTarget([latitude, longitude]);
+      },
+      () =>
+        setNotice(
+          "위치를 확인하지 못했습니다. 브라우저 위치 권한을 확인해 주세요.",
+        ),
+      { timeout: 10000, enableHighAccuracy: true },
+    );
+  }
+  function confirmPin() {
+    if (!pendingPin) return;
+    pickLocation(
+      pendingPin.lat,
+      pendingPin.lng,
+      pendingLoading ? undefined : pendingAddress,
+    );
+    clearPreview();
+  }
+  function pickLocation(lat: number, lng: number, knownAddress?: string) {
     const pickedLat = Number(lat.toFixed(6));
     const pickedLng = Number(lng.toFixed(6));
     setDraft((previous) => ({
@@ -332,9 +410,14 @@ function App() {
       ...previous,
       lat: pickedLat,
       lng: pickedLng,
+      ...(knownAddress !== undefined ? { address: knownAddress } : {}),
     }));
     setPicking(false);
     reverseRequest.current?.abort();
+    if (knownAddress !== undefined) {
+      setAddressLoading(false);
+      return;
+    }
     const controller = new AbortController();
     reverseRequest.current = controller;
     setAddressLoading(true);
@@ -354,7 +437,7 @@ function App() {
   function startAdd() {
     setSelected(null);
     setListOpen(false);
-    setPicking(false);
+    cancelPicking();
     setDraft({ category: "restaurant" });
     setView("map");
   }
@@ -514,7 +597,7 @@ function App() {
   function logout() {
     setSelected(null);
     setDraft(null);
-    setPicking(false);
+    cancelPicking();
     setListOpen(false);
     setView("map");
     if (supabase) {
@@ -1113,7 +1196,7 @@ function App() {
                     <MapActions
                       target={target}
                       picking={picking}
-                      onPick={pickLocation}
+                      onPick={previewPin}
                     />
                     {visible.map((place) => (
                       <Marker
@@ -1127,16 +1210,25 @@ function App() {
                         }
                         eventHandlers={{
                           click: () => {
-                            if (picking) pickLocation(place.lat, place.lng);
+                            if (picking) previewPin(place.lat, place.lng);
                             else choose(place);
                           },
                         }}
                       />
                     ))}
-                    {draft?.lat !== undefined && draft.lng !== undefined && (
+                    {draft?.lat !== undefined &&
+                      draft.lng !== undefined &&
+                      !picking && (
+                        <Marker
+                          position={[draft.lat, draft.lng]}
+                          icon={draftIcon}
+                        />
+                      )}
+                    {picking && pendingPin && (
                       <Marker
-                        position={[draft.lat, draft.lng]}
-                        icon={draftIcon}
+                        key={`${pendingPin.lat},${pendingPin.lng}`}
+                        position={[pendingPin.lat, pendingPin.lng]}
+                        icon={pendingIcon}
                       />
                     )}
                   </MapContainer>
@@ -1213,17 +1305,49 @@ function App() {
                     </button>
                   </div>
                   {picking && (
-                    <div className="pick-banner">
-                      <MapPin size={17} />
-                      <span>등록할 위치를 지도에서 선택해 주세요.</span>
-                      <button
-                        className="icon-button"
-                        title="위치 선택 취소"
-                        aria-label="위치 선택 취소"
-                        onClick={() => setPicking(false)}
-                      >
-                        <X size={17} />
-                      </button>
+                    <div className="pick-banner" role="status">
+                      <div className="pick-head">
+                        <MapPin size={17} />
+                        <span>
+                          {pendingPin
+                            ? "핀 위치를 확인해 주세요."
+                            : "등록할 위치를 지도에서 선택해 주세요."}
+                        </span>
+                        <button
+                          className="icon-button"
+                          title="위치 선택 취소"
+                          aria-label="위치 선택 취소"
+                          onClick={cancelPicking}
+                        >
+                          <X size={17} />
+                        </button>
+                      </div>
+                      {pendingPin && (
+                        <p className="pick-address">
+                          {pendingLoading
+                            ? "주소를 확인하는 중..."
+                            : pendingAddress ||
+                              "주소를 확인하지 못했습니다. 다음 화면에서 직접 입력해 주세요."}
+                        </p>
+                      )}
+                      <div className="pick-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={pinMyLocation}
+                        >
+                          <LocateFixed size={16} />내 위치에 핀 꽂기
+                        </button>
+                        {pendingPin && (
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={confirmPin}
+                          >
+                            이 위치로 선택
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                   <div className="map-legend">
@@ -1475,7 +1599,7 @@ function App() {
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() => setPicking(true)}
+                      onClick={startPicking}
                     >
                       {draft.lat !== undefined && draft.lng !== undefined
                         ? "지도에서 변경"
