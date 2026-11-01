@@ -17,6 +17,9 @@ export type Place = {
   note: string;
   price: string;
   hourly_rate?: number | null;
+  parking_free?: boolean | null;
+  fee_per_30min?: number | null;
+  free_minutes?: number | null;
   lat: number;
   lng: number;
   author_id: string;

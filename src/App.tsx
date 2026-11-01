@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Heart,
   Navigation,
+  Check,
 } from "lucide-react";
 import {
   supabase,
@@ -43,6 +44,17 @@ import knaufLogo from "./assets/knauf-logo.png";
 import { forwardGeocode, reverseGeocode } from "./kakao";
 import KakaoMap from "./KakaoMap";
 import PlaceSearch from "./PlaceSearch";
+import UsageDialog from "./UsageDialog";
+import SurveyDialog from "./SurveyDialog";
+import KpiPanel from "./KpiPanel";
+import { feeLabel, kpiSummary, summarizeSurveys, targetKeys } from "./kpi";
+import type {
+  KpiTargets,
+  SurveyPhase,
+  SurveySummary,
+  Survey,
+  UsageLog,
+} from "./kpi";
 import type { PlaceSuggestion } from "./kakao";
 import type { MapPinData } from "./KakaoMap";
 import Login from "./Login";
@@ -64,6 +76,14 @@ const knaufSites: { name: string; position: [number, number] }[] = [
 const knaufHq = knaufSites[0].position;
 const center = knaufHq;
 const nowIso = () => new Date().toISOString();
+const localDate = () => new Date().toLocaleDateString("sv-SE");
+const readTargets = (): KpiTargets => {
+  try {
+    return JSON.parse(localStorage.getItem("team-map-targets") ?? "{}");
+  } catch {
+    return {};
+  }
+};
 
 function App() {
   const demo = !supabase;
@@ -119,6 +139,22 @@ function App() {
   const [likes, setLikes] = useState<Like[]>(() =>
     demo ? readLocal("likes", []) : [],
   );
+  const [usageLogs, setUsageLogs] = useState<UsageLog[]>(() =>
+    demo ? readLocal("usage", []) : [],
+  );
+  const [surveys, setSurveys] = useState<Survey[]>(() =>
+    demo ? readLocal("surveys", []) : [],
+  );
+  const [surveySummary, setSurveySummary] = useState<SurveySummary[]>([]);
+  const [targets, setTargets] = useState<KpiTargets>(() =>
+    demo ? readTargets() : {},
+  );
+  const [usageFor, setUsageFor] = useState<Place | null>(null);
+  const [surveyPhase, setSurveyPhase] = useState<SurveyPhase | null>(null);
+  const [surveySkipped, setSurveySkipped] = useState(
+    () => localStorage.getItem("team-map-survey-skip") === "1",
+  );
+  const [month] = useState(() => localDate().slice(0, 7));
   const currentLikes = likes.filter((like) => like.place_id === selected);
   const liked = currentLikes.some((like) => like.author_id === profile?.id);
   const current = places.find((place) => place.id === selected);
@@ -132,6 +168,18 @@ function App() {
   const memberPlaces = places.filter((item) => !adminIds.has(item.author_id));
   const stats = statistics(memberPlaces, members);
   const ranks = rankings(memberPlaces, members, likes);
+  const memberLogs = usageLogs.filter((item) => !adminIds.has(item.author_id));
+  const kpi = kpiSummary(memberPlaces, memberLogs, month);
+  const ownSurveys = surveys.filter((item) => item.author_id === profile?.id);
+  const askBaseline =
+    allowed &&
+    !loading &&
+    !admin &&
+    !draft &&
+    !surveySkipped &&
+    !ownSurveys.some((item) => item.phase === "baseline");
+  const openSurvey: SurveyPhase | null =
+    surveyPhase ?? (askBaseline ? "baseline" : null);
   const visible = places.filter(
     (place) =>
       (filter === "all" ||
@@ -221,6 +269,24 @@ function App() {
       setProfiles(results[1].data as Profile[]);
       setComments(results[2].data as Comment[]);
       setLikes(results[3].data as Like[]);
+      // KPI 관련 테이블이 아직 없어도 앱의 나머지 기능은 동작하도록 오류는 무시한다.
+      const extra = await Promise.all([
+        supabase.from("usage_logs").select("*"),
+        supabase.from("parking_surveys").select("*").eq("author_id", userId),
+        supabase.rpc("survey_summary"),
+        supabase.from("kpi_targets").select("*"),
+      ]);
+      if (version !== requestVersion.current) return;
+      setUsageLogs((extra[0].data ?? []) as UsageLog[]);
+      setSurveys((extra[1].data ?? []) as Survey[]);
+      setSurveySummary((extra[2].data ?? []) as SurveySummary[]);
+      setTargets(
+        Object.fromEntries(
+          ((extra[3].data ?? []) as { key: string; value: number }[]).map(
+            (row) => [row.key, Number(row.value)],
+          ),
+        ),
+      );
     } catch (error) {
       if (version === requestVersion.current) setNotice(message(error));
     } finally {
@@ -246,6 +312,10 @@ function App() {
       setProfiles([]);
       setComments([]);
       setLikes([]);
+      setUsageLogs([]);
+      setSurveys([]);
+      setSurveySummary([]);
+      setTargets({});
       if (id) void refresh(id);
       else setLoading(false);
     };
@@ -280,6 +350,13 @@ function App() {
       else localStorage.removeItem("team-map-profile-id");
     }
   }, [likes, profile, demo]);
+  useEffect(() => {
+    if (demo) {
+      localStorage.setItem("team-map-usage", JSON.stringify(usageLogs));
+      localStorage.setItem("team-map-surveys", JSON.stringify(surveys));
+      localStorage.setItem("team-map-targets", JSON.stringify(targets));
+    }
+  }, [usageLogs, surveys, targets, demo]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 7000);
@@ -480,12 +557,31 @@ function App() {
     event.preventDefault();
     if (!profile || !draft || busy) return;
     const form = new FormData(event.currentTarget);
+    const category = String(form.get("category")) as Place["category"];
+    const feeType =
+      category === "parking" ? String(form.get("fee_type") ?? "") : "";
+    const numberOrNull = (value: FormDataEntryValue | null) => {
+      const raw = String(value ?? "").trim();
+      const parsed = Math.round(Number(raw));
+      return raw !== "" && Number.isFinite(parsed) && parsed >= 0
+        ? parsed
+        : null;
+    };
     const data = {
       name: String(form.get("name")).trim(),
-      category: String(form.get("category")) as Place["category"],
+      category,
       address: String(form.get("address") ?? "").trim(),
       note: String(form.get("note")).trim(),
       price: String(form.get("price")).trim(),
+      parking_free: feeType ? feeType === "free" : null,
+      fee_per_30min:
+        feeType === "free"
+          ? 0
+          : feeType === "paid"
+            ? numberOrNull(form.get("fee_per_30min"))
+            : null,
+      free_minutes:
+        feeType === "paid" ? numberOrNull(form.get("free_minutes")) : null,
       lat: draft.lat ?? Number.NaN,
       lng: draft.lng ?? Number.NaN,
     };
@@ -723,6 +819,113 @@ function App() {
     }
   }
 
+  async function addUsage(
+    place: Place,
+    actual: number | null,
+    usual: number | null,
+  ) {
+    if (!profile || !allowed || busy) return;
+    setBusy(true);
+    try {
+      const row = {
+        place_id: place.id,
+        author_id: profile.id,
+        used_at: localDate(),
+        actual_fee: actual,
+        usual_fee: usual,
+      };
+      let log: UsageLog;
+      if (supabase) {
+        const result = await supabase
+          .from("usage_logs")
+          .insert(row)
+          .select()
+          .single();
+        if (result.error) throw result.error;
+        log = result.data as UsageLog;
+      } else log = { ...row, id: crypto.randomUUID(), created_at: nowIso() };
+      setUsageLogs((previous) => [...previous, log]);
+      setUsageFor(null);
+      setNotice("이용 기록을 저장했습니다.");
+    } catch (error) {
+      setNotice(message(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSurvey(phase: SurveyPhase, fee: number) {
+    if (!profile || busy) return;
+    setBusy(true);
+    try {
+      const exists = ownSurveys.some((item) => item.phase === phase);
+      if (supabase) {
+        const result = exists
+          ? await supabase
+              .from("parking_surveys")
+              .update({ monthly_fee: fee })
+              .eq("author_id", profile.id)
+              .eq("phase", phase)
+          : await supabase.from("parking_surveys").insert({
+              author_id: profile.id,
+              phase,
+              monthly_fee: fee,
+            });
+        if (result.error) throw result.error;
+        const summary = await supabase.rpc("survey_summary");
+        if (!summary.error)
+          setSurveySummary((summary.data ?? []) as SurveySummary[]);
+      }
+      setSurveys((previous) => [
+        ...previous.filter(
+          (item) => !(item.author_id === profile.id && item.phase === phase),
+        ),
+        { author_id: profile.id, phase, monthly_fee: fee },
+      ]);
+      setSurveyPhase(null);
+      setNotice("설문에 응답해 주셔서 감사합니다.");
+    } catch (error) {
+      setNotice(message(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveTargets(next: KpiTargets) {
+    if (!admin || busy) return;
+    setBusy(true);
+    try {
+      if (supabase) {
+        for (const key of targetKeys) {
+          const value = next[key];
+          if (value === undefined) continue;
+          const result =
+            targets[key] !== undefined
+              ? await supabase
+                  .from("kpi_targets")
+                  .update({ value })
+                  .eq("key", key)
+              : await supabase.from("kpi_targets").insert({ key, value });
+          if (result.error) throw result.error;
+        }
+      }
+      setTargets((previous) => ({ ...previous, ...next }));
+      setNotice("목표값을 저장했습니다.");
+    } catch (error) {
+      setNotice(message(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function closeSurvey() {
+    if (surveyPhase) setSurveyPhase(null);
+    else {
+      localStorage.setItem("team-map-survey-skip", "1");
+      setSurveySkipped(true);
+    }
+  }
+
   async function setAccess(person: Profile, approved: boolean) {
     setBusy(true);
     try {
@@ -866,6 +1069,24 @@ function App() {
                   </strong>
                 </div>
               </div>
+              <KpiPanel
+                places={memberPlaces}
+                summary={kpi}
+                month={month}
+                participation={stats.participation}
+                targets={targets}
+                surveys={
+                  demo
+                    ? summarizeSurveys(
+                        surveys.filter((item) => !adminIds.has(item.author_id)),
+                      )
+                    : surveySummary
+                }
+                admin={admin}
+                busy={busy}
+                onSaveTargets={(next) => void saveTargets(next)}
+                onOpenSurvey={setSurveyPhase}
+              />
               <div className="rank-grid">
                 {(
                   [
@@ -1127,6 +1348,11 @@ function App() {
                             {place.price && (
                               <p className="price-chip">{place.price}</p>
                             )}
+                            {feeLabel(place) && (
+                              <p className="price-chip fee-chip">
+                                {feeLabel(place)}
+                              </p>
+                            )}
                             <div className="place-footer">
                               <span>
                                 {!adminIds.has(place.author_id) && (
@@ -1354,10 +1580,32 @@ function App() {
                         />
                         좋아요 {currentLikes.length}
                       </button>
+                      {feeLabel(current) && (
+                        <span className="price fee-chip">
+                          {feeLabel(current)}
+                        </span>
+                      )}
                       {current.price && (
                         <span className="price">{current.price}</span>
                       )}
                       <p className="detail-note">{current.note}</p>
+                      <button
+                        className="secondary usage-button"
+                        onClick={() => setUsageFor(current)}
+                      >
+                        <Check size={16} />
+                        이용했어요
+                        <small>
+                          {" "}
+                          · 총{" "}
+                          {
+                            memberLogs.filter(
+                              (item) => item.place_id === current.id,
+                            ).length
+                          }
+                          회
+                        </small>
+                      </button>
                       <button
                         className="primary navi-button"
                         onClick={() => {
@@ -1605,6 +1853,68 @@ function App() {
                       placeholder="메뉴, 이용 시간, 요금 등 공유할 내용"
                     />
                   </label>
+                  {draft.category === "parking" && (
+                    <fieldset className="category-choice fee-choice">
+                      <legend>요금 (선택)</legend>
+                      <label>
+                        <input
+                          type="radio"
+                          name="fee_type"
+                          value="free"
+                          checked={draft.parking_free === true}
+                          onChange={() =>
+                            setDraft((previous) => ({
+                              ...previous,
+                              parking_free: true,
+                            }))
+                          }
+                        />
+                        무료
+                      </label>
+                      <label>
+                        <input
+                          type="radio"
+                          name="fee_type"
+                          value="paid"
+                          checked={draft.parking_free === false}
+                          onChange={() =>
+                            setDraft((previous) => ({
+                              ...previous,
+                              parking_free: false,
+                            }))
+                          }
+                        />
+                        유료
+                      </label>
+                    </fieldset>
+                  )}
+                  {draft.category === "parking" &&
+                    draft.parking_free === false && (
+                      <div className="fee-fields">
+                        <label>
+                          30분당 요금 (원)
+                          <input
+                            name="fee_per_30min"
+                            type="number"
+                            min={0}
+                            max={100000}
+                            defaultValue={draft.fee_per_30min ?? ""}
+                            placeholder="예: 1500"
+                          />
+                        </label>
+                        <label>
+                          무료 시간 (분)
+                          <input
+                            name="free_minutes"
+                            type="number"
+                            min={0}
+                            max={1440}
+                            defaultValue={draft.free_minutes ?? ""}
+                            placeholder="예: 30"
+                          />
+                        </label>
+                      </div>
+                    )}
                   <label>
                     {draft.category === "parking"
                       ? "추가 요금 안내 (선택)"
@@ -1634,6 +1944,29 @@ function App() {
                 </form>
               </section>
             </div>
+          )}
+          {usageFor && (
+            <UsageDialog
+              place={usageFor}
+              busy={busy}
+              onClose={() => setUsageFor(null)}
+              onSubmit={(actual, usual) =>
+                void addUsage(usageFor, actual, usual)
+              }
+            />
+          )}
+          {openSurvey && (
+            <SurveyDialog
+              key={openSurvey}
+              phase={openSurvey}
+              busy={busy}
+              initial={
+                ownSurveys.find((item) => item.phase === openSurvey)
+                  ?.monthly_fee
+              }
+              onSubmit={(fee) => void saveSurvey(openSurvey, fee)}
+              onClose={closeSurvey}
+            />
           )}
         </>
       )}
