@@ -32,7 +32,7 @@ export default function Login({
     <main className="login-page">
       <div className="login-card">
         <img src={knaufLogo} alt="KNAUF" className="login-logo" />
-        <p className="login-sub">C.I. project</p>
+        <p className="login-sub">2026 CI KAiZEN CIRCLE</p>
         <form key={mode} onSubmit={submit}>
           {mode === "signup" && (
             <>

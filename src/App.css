@@ -414,7 +414,8 @@
   min-width: 0;
   isolation: isolate;
 }
-.leaflet-map {
+.kmap {
+  position: relative;
   width: 100%;
   height: 100%;
   background: #eef2f6;
@@ -460,44 +461,6 @@
 }
 .map-control:hover {
   background: #f1f5f9;
-}
-.leaflet-top.leaflet-left {
-  top: 60px;
-  left: 6px;
-}
-.leaflet-control-zoom {
-  border: 1px solid var(--line) !important;
-  border-radius: 6px !important;
-  box-shadow: 0 1px 3px #0f172a14 !important;
-  overflow: hidden;
-}
-.leaflet-control-zoom a {
-  color: var(--ink) !important;
-}
-.leaflet-control-attribution {
-  font-size: 10px !important;
-}
-.map-style-picker {
-  position: absolute;
-  top: 60px;
-  right: 16px;
-  z-index: 400;
-}
-.map-style-picker label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-.map-style-picker select {
-  max-width: 180px;
-  padding: 7px 8px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: 0 1px 3px #0f172a14;
-  font-size: 12px;
 }
 .map-error {
   position: absolute;
@@ -545,6 +508,46 @@
   background: #f59e0b;
   font-size: 18px;
 }
+.k-pin {
+  position: relative;
+  width: 32px;
+  height: 40px;
+  cursor: pointer;
+}
+.k-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 24px;
+  width: 10px;
+  height: 10px;
+  background: var(--pin-color, var(--accent));
+  transform: translateX(-50%) rotate(45deg);
+}
+.k-pin .map-pin {
+  position: relative;
+  z-index: 1;
+}
+.k-pin.restaurant {
+  --pin-color: var(--accent);
+}
+.k-pin.parking {
+  --pin-color: var(--navy);
+}
+.k-pin.draft,
+.k-pin.pending {
+  --pin-color: #f59e0b;
+  cursor: default;
+}
+.landmark-wrap {
+  padding-bottom: 10px;
+  pointer-events: none;
+}
+.field-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--accent-dark);
+}
 .landmark-pin {
   position: relative;
   width: 84px;
@@ -580,7 +583,7 @@
   border-bottom: 2px solid var(--accent);
   transform: translateX(-50%) rotate(45deg);
 }
-.leaflet-container .landmark-pin img {
+.kmap .landmark-pin img {
   position: relative;
   z-index: 1;
   width: 56px;
@@ -675,8 +678,9 @@
     opacity: 1;
   }
 }
-.picking .leaflet-container {
-  cursor: crosshair;
+.picking .kmap,
+.picking .kmap * {
+  cursor: crosshair !important;
 }
 
 /* Place detail */
@@ -1446,16 +1450,9 @@ tbody tr:last-child td {
     font-weight: 600;
     box-shadow: 0 6px 16px #0084be59;
   }
-  .leaflet-control-zoom {
-    display: none;
-  }
   .map-top {
     top: 12px;
     left: 12px;
-    right: 12px;
-  }
-  .map-style-picker {
-    top: 60px;
     right: 12px;
   }
   .map-legend {

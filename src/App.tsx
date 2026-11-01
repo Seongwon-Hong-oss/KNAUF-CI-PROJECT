@@ -1,16 +1,5 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  useMap,
-  useMapEvents,
-} from "react-leaflet";
-import { divIcon } from "leaflet";
-import { maplibreGL } from "@maplibre/maplibre-gl-leaflet";
-import { setWorkerUrl } from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import {
   MapPin,
   Utensils,
@@ -51,59 +40,13 @@ import type { Office } from "./data";
 import type { Place, Profile, Comment, Like } from "./data";
 import { naverSearchUrl, openNaverNavigation } from "./naverNavigation";
 import knaufLogo from "./assets/knauf-logo.png";
-import { reverseGeocode } from "./reverseGeocode";
+import { forwardGeocode, reverseGeocode } from "./kakao";
+import KakaoMap from "./KakaoMap";
+import PlaceSearch from "./PlaceSearch";
+import type { PlaceSuggestion } from "./kakao";
+import type { MapPinData } from "./KakaoMap";
 import Login from "./Login";
-import "leaflet/dist/leaflet.css";
-import "maplibre-gl/dist/maplibre-gl.css";
 import "./App.css";
-
-setWorkerUrl(workerUrl);
-
-function SimpleBasemap({ onError }: { onError: () => void }) {
-  const map = useMap();
-  const reportError = useEffectEvent(onError);
-  useEffect(() => {
-    const layer = maplibreGL({
-      style: "https://tiles.openfreemap.org/styles/positron",
-    });
-    try {
-      layer.addTo(map);
-      layer.getMaplibreMap().on("error", reportError);
-    } catch {
-      if (map.hasLayer(layer)) map.removeLayer(layer);
-      reportError();
-    }
-    return () => {
-      if (map.hasLayer(layer)) map.removeLayer(layer);
-    };
-  }, [map]);
-  return null;
-}
-
-const restaurantIcon = divIcon({
-  className: "pin-wrap",
-  html: '<div class="map-pin restaurant-pin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></div>',
-  iconSize: [38, 46],
-  iconAnchor: [19, 44],
-});
-const parkingIcon = divIcon({
-  className: "pin-wrap",
-  html: '<div class="map-pin parking-pin">P</div>',
-  iconSize: [38, 46],
-  iconAnchor: [19, 44],
-});
-const draftIcon = divIcon({
-  className: "pin-wrap",
-  html: '<div class="map-pin draft-pin">+</div>',
-  iconSize: [38, 46],
-  iconAnchor: [19, 44],
-});
-const pendingIcon = divIcon({
-  className: "pin-wrap",
-  html: '<div class="map-pin draft-pin pin-drop">+</div>',
-  iconSize: [38, 46],
-  iconAnchor: [19, 44],
-});
 // 크나우프 사무소·공장 위치(도로명 주소 기준 좌표). 서울사무소는 지도의 기본 중심이다.
 const knaufSites: { name: string; position: [number, number] }[] = [
   { name: "서울사무소", position: [37.5102336492314, 127.058597240146] },
@@ -118,70 +61,9 @@ const knaufSites: { name: string; position: [number, number] }[] = [
   ...site,
   position: site.position as [number, number],
 }));
-const landmarkIcons = knaufSites.map((site) =>
-  divIcon({
-    className: "pin-wrap",
-    html: `<div class="landmark-pin"><img src="${knaufLogo}" alt="" /><span>${site.name}</span></div>`,
-    iconSize: [84, 64],
-    iconAnchor: [42, 62],
-  }),
-);
 const knaufHq = knaufSites[0].position;
 const center = knaufHq;
-
-function MapActions({
-  target,
-  picking,
-  onPick,
-}: {
-  target: [number, number] | null;
-  picking: boolean;
-  onPick: (lat: number, lng: number) => void;
-}) {
-  const map = useMap();
-  useEffect(() => {
-    if (!target) return;
-    const zoom = 16;
-    // 모바일은 하단 시트에 가려지지 않도록 핀을 화면 위쪽에 둔다.
-    const shift = window.matchMedia("(max-width: 700px)").matches
-      ? map.getSize().y * 0.2
-      : 0;
-    const center = map.unproject(
-      map.project(target, zoom).add([0, shift]),
-      zoom,
-    );
-    map.flyTo(center, zoom, { duration: 0.7 });
-  }, [target, map]);
-  useEffect(() => {
-    // 레이아웃이 잡히는 동안 크기가 바뀔 때마다 본사 위치를 중앙에 다시 맞춘다.
-    let active = true;
-    const recenter = () => {
-      if (!active) return;
-      map.invalidateSize();
-      map.setView(knaufHq, map.getZoom(), { animate: false });
-    };
-    const observer = new ResizeObserver(recenter);
-    observer.observe(map.getContainer());
-    const stop = () => {
-      active = false;
-      observer.disconnect();
-    };
-    const timer = setTimeout(stop, 1500);
-    map.once("dragstart", stop);
-    recenter();
-    return () => {
-      clearTimeout(timer);
-      stop();
-      map.off("dragstart", stop);
-    };
-  }, [map]);
-  useMapEvents({
-    click: (event) => {
-      if (picking) onPick(event.latlng.lat, event.latlng.lng);
-    },
-  });
-  return null;
-}
+const nowIso = () => new Date().toISOString();
 
 function App() {
   const demo = !supabase;
@@ -209,11 +91,6 @@ function App() {
   const [target, setTarget] = useState<[number, number] | null>(null);
   const [picking, setPicking] = useState(false);
   const [listOpen, setListOpen] = useState(false);
-  const [mapStyle, setMapStyle] = useState<"simple" | "standard">("simple");
-  const [mapError, setMapError] = useState(false);
-  function handleMapError() {
-    setMapError(true);
-  }
   const [draft, setDraft] = useState<Partial<Place> | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const reverseRequest = useRef<AbortController | null>(null);
@@ -225,6 +102,12 @@ function App() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRequest = useRef<AbortController | null>(null);
+  const addressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressQuery = useRef("");
+  const [addressHint, setAddressHint] = useState<{
+    query: string;
+    text: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!demo);
   const [notice, setNotice] = useState("");
@@ -259,6 +142,46 @@ function App() {
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
+  const pins: MapPinData[] = [
+    ...knaufSites.map((site) => ({
+      id: `site-${site.name}`,
+      kind: "landmark" as const,
+      lat: site.position[0],
+      lng: site.position[1],
+      label: site.name,
+    })),
+    ...visible.map((place) => ({
+      id: place.id,
+      kind: place.category,
+      lat: place.lat,
+      lng: place.lng,
+      label: place.name,
+      onClick: () => {
+        if (picking) previewPin(place.lat, place.lng);
+        else choose(place);
+      },
+    })),
+    ...(draft?.lat !== undefined && draft.lng !== undefined && !picking
+      ? [
+          {
+            id: "draft",
+            kind: "draft" as const,
+            lat: draft.lat,
+            lng: draft.lng,
+          },
+        ]
+      : []),
+    ...(picking && pendingPin
+      ? [
+          {
+            id: "pending",
+            kind: "pending" as const,
+            lat: pendingPin.lat,
+            lng: pendingPin.lng,
+          },
+        ]
+      : []),
+  ];
 
   async function refresh(userId = authUser) {
     if (!supabase || !userId) {
@@ -416,6 +339,10 @@ function App() {
   function startPicking() {
     clearPreview();
     setPicking(true);
+    if (draft?.lat !== undefined && draft.lng !== undefined) {
+      previewPin(draft.lat, draft.lng);
+      setTarget([draft.lat, draft.lng]);
+    }
   }
   function pinMyLocation() {
     if (!navigator.geolocation) {
@@ -437,12 +364,70 @@ function App() {
   }
   function confirmPin() {
     if (!pendingPin) return;
+    const typedAddress =
+      draft?.lat === pendingPin.lat &&
+      draft.lng === pendingPin.lng &&
+      draft.address?.trim()
+        ? draft.address
+        : undefined;
     pickLocation(
       pendingPin.lat,
       pendingPin.lng,
-      pendingLoading ? undefined : pendingAddress,
+      typedAddress ?? (pendingLoading ? undefined : pendingAddress),
     );
     clearPreview();
+  }
+  // 검색 결과를 선택하면 이름·주소·위치(와 알 수 있는 종류)를 채운다.
+  function selectSuggestion(place: PlaceSuggestion) {
+    const lat = Number(place.lat.toFixed(6));
+    const lng = Number(place.lng.toFixed(6));
+    if (addressTimer.current) clearTimeout(addressTimer.current);
+    addressQuery.current = place.address;
+    setDraft((previous) => ({
+      ...previous,
+      name: place.name,
+      address: place.address,
+      lat,
+      lng,
+      ...(place.category ? { category: place.category } : {}),
+    }));
+    setTarget([lat, lng]);
+    if (place.address)
+      setAddressHint({
+        query: place.address,
+        text: "검색한 장소의 위치를 지도에 표시했습니다. '지도에서 확인/변경'으로 핀을 확인해 주세요.",
+      });
+  }
+  // 주소를 직접 입력하면 잠시 뒤 좌표를 찾아 지도에 핀을 표시한다.
+  function onAddressInput(value: string) {
+    setDraft((previous) => ({ ...previous, address: value }));
+    if (addressTimer.current) clearTimeout(addressTimer.current);
+    const query = value.trim();
+    addressQuery.current = query;
+    if (query.length < 4) return;
+    addressTimer.current = setTimeout(() => {
+      setAddressHint({ query, text: "주소 위치를 찾는 중..." });
+      void forwardGeocode(query).then((found) => {
+        if (addressQuery.current !== query) return;
+        if (!found) {
+          setAddressHint({
+            query,
+            text: "주소를 찾지 못했습니다. 지도에서 직접 선택해 주세요.",
+          });
+          return;
+        }
+        const lat = Number(found.lat.toFixed(6));
+        const lng = Number(found.lng.toFixed(6));
+        setDraft((previous) =>
+          previous ? { ...previous, lat, lng } : previous,
+        );
+        setTarget([lat, lng]);
+        setAddressHint({
+          query,
+          text: "입력한 주소의 위치를 지도에 표시했습니다. '지도에서 확인/변경'으로 핀을 확인해 주세요.",
+        });
+      });
+    }, 800);
   }
   function pickLocation(lat: number, lng: number, knownAddress?: string) {
     const pickedLat = Number(lat.toFixed(6));
@@ -540,7 +525,7 @@ function App() {
           ...data,
           id: draft.id ?? crypto.randomUUID(),
           author_id: draft.author_id ?? profile.id,
-          created_at: draft.created_at ?? new Date().toISOString(),
+          created_at: draft.created_at ?? nowIso(),
         };
       setPlaces((previous) => [
         place,
@@ -774,7 +759,7 @@ function App() {
           <header className="header">
             <a className="brand" href="#" onClick={() => setView("map")}>
               <img src={knaufLogo} alt="KNAUF" width="118" height="60" />
-              <small>C.I. project</small>
+              <small>2026 CI KAiZEN CIRCLE</small>
             </a>
             <nav aria-label="주 메뉴">
               <button
@@ -1220,98 +1205,13 @@ function App() {
                   className={`map-section ${picking ? "picking" : ""}`}
                   aria-label="장소 지도"
                 >
-                  <MapContainer
+                  <KakaoMap
+                    pins={pins}
                     center={center}
-                    zoom={15}
-                    scrollWheelZoom
-                    className="leaflet-map"
-                  >
-                    {mapStyle === "standard" ? (
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                        maxZoom={19}
-                      />
-                    ) : (
-                      <SimpleBasemap onError={handleMapError} />
-                    )}
-                    <MapActions
-                      target={target}
-                      picking={picking}
-                      onPick={previewPin}
-                    />
-                    {knaufSites.map((site, index) => (
-                      <Marker
-                        key={site.name}
-                        position={site.position}
-                        icon={landmarkIcons[index]}
-                        interactive={false}
-                        keyboard={false}
-                      />
-                    ))}
-                    {visible.map((place) => (
-                      <Marker
-                        key={place.id}
-                        title={place.name}
-                        position={[place.lat, place.lng]}
-                        icon={
-                          place.category === "restaurant"
-                            ? restaurantIcon
-                            : parkingIcon
-                        }
-                        eventHandlers={{
-                          click: () => {
-                            if (picking) previewPin(place.lat, place.lng);
-                            else choose(place);
-                          },
-                        }}
-                      />
-                    ))}
-                    {draft?.lat !== undefined &&
-                      draft.lng !== undefined &&
-                      !picking && (
-                        <Marker
-                          position={[draft.lat, draft.lng]}
-                          icon={draftIcon}
-                        />
-                      )}
-                    {picking && pendingPin && (
-                      <Marker
-                        key={`${pendingPin.lat},${pendingPin.lng}`}
-                        position={[pendingPin.lat, pendingPin.lng]}
-                        icon={pendingIcon}
-                      />
-                    )}
-                  </MapContainer>
-                  <div className="map-style-picker">
-                    <label htmlFor="map-style">지도 스타일</label>
-                    <select
-                      id="map-style"
-                      value={mapStyle}
-                      onChange={(event) => {
-                        setMapStyle(
-                          event.target.value as "simple" | "standard",
-                        );
-                        setMapError(false);
-                      }}
-                    >
-                      <option value="simple">심플 · Positron</option>
-                      <option value="standard">기본 · OpenStreetMap</option>
-                    </select>
-                  </div>
-                  {mapError && mapStyle === "simple" && (
-                    <div className="map-error" role="status">
-                      심플 지도를 불러오지 못했습니다.
-                      <button
-                        onClick={() => {
-                          setMapStyle("standard");
-                          setMapError(false);
-                        }}
-                      >
-                        기본 지도로 전환
-                      </button>
-                    </div>
-                  )}
+                    target={target}
+                    picking={picking}
+                    onPick={previewPin}
+                  />
                   <div className="map-top">
                     <button
                       className="list-toggle"
@@ -1638,6 +1538,7 @@ function App() {
                       주차장
                     </label>
                   </fieldset>
+                  {!draft.id && <PlaceSearch onSelect={selectSuggestion} />}
                   <div
                     className={`location-field ${draft.lat !== undefined && draft.lng !== undefined ? "is-set" : ""}`}
                   >
@@ -1653,7 +1554,7 @@ function App() {
                       onClick={startPicking}
                     >
                       {draft.lat !== undefined && draft.lng !== undefined
-                        ? "지도에서 변경"
+                        ? "지도에서 확인/변경"
                         : "지도에서 선택"}
                     </button>
                   </div>
@@ -1681,18 +1582,17 @@ function App() {
                       required
                       maxLength={200}
                       value={draft.address ?? ""}
-                      onChange={(event) =>
-                        setDraft((previous) => ({
-                          ...previous,
-                          address: event.target.value,
-                        }))
-                      }
+                      onChange={(event) => onAddressInput(event.target.value)}
                       placeholder={
                         addressLoading
                           ? "주소를 불러오는 중..."
                           : "주소 입력 또는 지도에서 선택"
                       }
                     />
+                    {addressHint &&
+                      draft.address?.trim() === addressHint.query && (
+                        <small className="field-hint">{addressHint.text}</small>
+                      )}
                   </label>
                   <label>
                     추천 메모
