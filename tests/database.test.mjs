@@ -53,6 +53,12 @@ test("instant signup, ratings, parking fees and access policies", async () => {
         "utf8",
       ),
     );
+    await db.exec(
+      await readFile(
+        new URL("../supabase/008_place_photo.sql", import.meta.url),
+        "utf8",
+      ),
+    );
     const accounts = [
       [admin, "Admin", "Seoul office"],
       [employee, "employee1", "Ulsan Plant"],
@@ -325,16 +331,41 @@ test("instant signup, ratings, parking fees and access policies", async () => {
         null,
       );
       await assert.rejects(
-        db.query("insert into kpi_targets (key, value) values ('monthly_usage', 10)"),
+        db.query(
+          "insert into kpi_targets (key, value) values ('monthly_usage', 10)",
+        ),
         /row-level security/,
       );
       await assert.rejects(
         db.query("update places set fee_per_30min = -1 where id=$1", [place]),
         /places_fee_valid/,
       );
+      await assert.rejects(
+        db.query(
+          "update places set photo_path = 'http://x/y.jpg' where id=$1",
+          [place],
+        ),
+        /places_photo_path_valid/,
+      );
+      const photo = `${employee}/${place}.jpg`;
+      await db.query("update places set photo_path = $2 where id=$1", [
+        place,
+        photo,
+      ]);
+      await db.query("update profiles set avatar_path = $2 where id=$1", [
+        employee,
+        photo,
+      ]);
+      const others = await db.query(
+        "update profiles set avatar_path = $2 where id=$1",
+        [admin, photo],
+      );
+      assert.equal(others.affectedRows, 0);
     });
     await asUser(admin, () =>
-      db.query("insert into kpi_targets (key, value) values ('monthly_usage', 10)"),
+      db.query(
+        "insert into kpi_targets (key, value) values ('monthly_usage', 10)",
+      ),
     );
     await asUser(admin, () =>
       db.query("select set_employee_approval($1, false)", [employee]),
