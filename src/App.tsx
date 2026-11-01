@@ -30,7 +30,6 @@ import {
   readLocal,
   statistics,
   createLocalComment,
-  rankings,
   demoSignIn,
   demoRegister,
   accountToEmail,
@@ -47,7 +46,13 @@ import PlaceSearch from "./PlaceSearch";
 import UsageDialog from "./UsageDialog";
 import SurveyDialog from "./SurveyDialog";
 import KpiPanel from "./KpiPanel";
-import { feeLabel, kpiSummary, summarizeSurveys, targetKeys } from "./kpi";
+import {
+  feeLabel,
+  funRankCards,
+  kpiSummary,
+  summarizeSurveys,
+  targetKeys,
+} from "./kpi";
 import type {
   KpiTargets,
   SurveyPhase,
@@ -167,8 +172,15 @@ function App() {
   const members = profiles.filter((item) => item.role !== "admin");
   const memberPlaces = places.filter((item) => !adminIds.has(item.author_id));
   const stats = statistics(memberPlaces, members);
-  const ranks = rankings(memberPlaces, members, likes);
   const memberLogs = usageLogs.filter((item) => !adminIds.has(item.author_id));
+  const funCards = funRankCards({
+    places: memberPlaces,
+    members,
+    likes,
+    comments,
+    logs: memberLogs,
+    month,
+  });
   const kpi = kpiSummary(memberPlaces, memberLogs, month);
   const ownSurveys = surveys.filter((item) => item.author_id === profile?.id);
   const askBaseline =
@@ -1069,66 +1081,65 @@ function App() {
                   </strong>
                 </div>
               </div>
-              <KpiPanel
-                places={memberPlaces}
-                summary={kpi}
-                month={month}
-                participation={stats.participation}
-                targets={targets}
-                surveys={
-                  demo
-                    ? summarizeSurveys(
-                        surveys.filter((item) => !adminIds.has(item.author_id)),
-                      )
-                    : surveySummary
-                }
-                admin={admin}
-                busy={busy}
-                onSaveTargets={(next) => void saveTargets(next)}
-                onOpenSurvey={setSurveyPhase}
-              />
+              {admin ? (
+                <KpiPanel
+                  places={memberPlaces}
+                  summary={kpi}
+                  month={month}
+                  participation={stats.participation}
+                  targets={targets}
+                  surveys={
+                    demo
+                      ? summarizeSurveys(
+                          surveys.filter(
+                            (item) => !adminIds.has(item.author_id),
+                          ),
+                        )
+                      : surveySummary
+                  }
+                  admin={admin}
+                  busy={busy}
+                  onSaveTargets={(next) => void saveTargets(next)}
+                  onOpenSurvey={setSurveyPhase}
+                />
+              ) : (
+                <section className="kpi-survey member-survey">
+                  <h3>주차비 설문 (익명 집계)</h3>
+                  <p className="kpi-note">
+                    월평균 주차비를 입력해 주시면 프로젝트 효과를 측정하는 데
+                    쓰입니다. 개인 응답은 다른 멤버에게 보이지 않습니다.
+                  </p>
+                  <div className="kpi-actions">
+                    <button
+                      className="secondary"
+                      onClick={() => setSurveyPhase("baseline")}
+                    >
+                      도입 전 월평균 주차비{" "}
+                      {ownSurveys.some((item) => item.phase === "baseline")
+                        ? "수정"
+                        : "입력"}
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => setSurveyPhase("followup")}
+                    >
+                      도입 후 월평균 주차비{" "}
+                      {ownSurveys.some((item) => item.phase === "followup")
+                        ? "수정"
+                        : "입력"}
+                    </button>
+                  </div>
+                </section>
+              )}
               <div className="rank-grid">
-                {(
-                  [
-                    [
-                      "가장 많은 좋아요를 받은 장소",
-                      ranks.likedPlaces.map((item) => ({
-                        key: item.place.id,
-                        name: item.place.name,
-                        sub:
-                          item.place.category === "restaurant"
-                            ? "맛집"
-                            : "주차장",
-                        value: `${item.value}개`,
-                      })),
-                    ],
-                    [
-                      "가장 많은 좋아요를 받은 멤버",
-                      ranks.likedPeople.map((item) => ({
-                        key: item.name,
-                        name: item.name,
-                        sub: item.sub,
-                        value: `${item.value}개`,
-                      })),
-                    ],
-                    [
-                      "가장 많이 등록한 멤버",
-                      ranks.registrants.map((item) => ({
-                        key: item.name,
-                        name: item.name,
-                        sub: item.sub,
-                        value: `${item.value}곳`,
-                      })),
-                    ],
-                  ] as const
-                ).map(([title, rows]) => (
-                  <section key={title} className="rank-card">
-                    <h3>{title}</h3>
-                    {rows.length === 0 ? (
+                {funCards.map((card) => (
+                  <section key={card.title} className="rank-card">
+                    <h3>{card.title}</h3>
+                    {card.rows.length === 0 ? (
                       <p className="rank-empty">아직 데이터가 없습니다.</p>
                     ) : (
                       <ol>
-                        {rows.map((row, index) => (
+                        {card.rows.map((row, index) => (
                           <li key={row.key}>
                             <span className="rank-no">{index + 1}</span>
                             <span className="rank-name">

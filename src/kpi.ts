@@ -1,4 +1,4 @@
-import type { Place } from "./data";
+import type { Comment, Like, Place, Profile } from "./data";
 
 export type UsageLog = {
   id: string;
@@ -107,6 +107,155 @@ export type MonthRow = {
   savingCount: number;
   users: number;
 };
+
+export type RankRow = {
+  key: string;
+  name: string;
+  sub?: string;
+  value: string;
+};
+export type RankCard = { title: string; rows: RankRow[] };
+
+// 멤버 대시보드용 재미 순위(각 TOP 3). 금액은 노출하지 않고 횟수만 보여준다.
+export function funRankCards(input: {
+  places: Place[];
+  members: Profile[];
+  likes: Like[];
+  comments: Comment[];
+  logs: UsageLog[];
+  month: string;
+}): RankCard[] {
+  const { places, members, likes, comments, logs, month } = input;
+  const placeById = new Map(places.map((place) => [place.id, place]));
+  const memberById = new Map(members.map((member) => [member.id, member]));
+  const count = (keys: string[]) => {
+    const map = new Map<string, number>();
+    for (const key of keys) map.set(key, (map.get(key) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  };
+  const people = (entries: [string, number][], unit: string): RankRow[] =>
+    entries.flatMap(([id, value]) => {
+      const member = memberById.get(id);
+      return member
+        ? [
+            {
+              key: id,
+              name: member.name,
+              sub: member.department,
+              value: `${value}${unit}`,
+            },
+          ]
+        : [];
+    });
+  const spots = (entries: [string, number][], unit: string): RankRow[] =>
+    entries.flatMap(([id, value]) => {
+      const place = placeById.get(id);
+      return place
+        ? [
+            {
+              key: id,
+              name: place.name,
+              sub: districtOf(place.address) ?? feeLabel(place),
+              value: `${value}${unit}`,
+            },
+          ]
+        : [];
+    });
+  const parking = places.filter((place) => place.category === "parking");
+  const parkingIds = new Set(parking.map((place) => place.id));
+  const restaurantIds = new Set(
+    places.filter((place) => place.category === "restaurant").map((p) => p.id),
+  );
+  const newest = [...places]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 3);
+  return [
+    {
+      title: "좋아요 최다 멤버",
+      rows: people(
+        count(
+          likes.flatMap((like) => {
+            const owner = placeById.get(like.place_id)?.author_id;
+            return owner ? [owner] : [];
+          }),
+        ),
+        "개",
+      ),
+    },
+    {
+      title: "좋아요 최다 맛집",
+      rows: spots(
+        count(
+          likes
+            .map((like) => like.place_id)
+            .filter((id) => restaurantIds.has(id)),
+        ),
+        "개",
+      ),
+    },
+    {
+      title: "가장 많이 이용한 주차장",
+      rows: spots(
+        count(
+          logs.map((log) => log.place_id).filter((id) => parkingIds.has(id)),
+        ),
+        "회",
+      ),
+    },
+    {
+      title: "무료 주차장 등록왕",
+      rows: people(
+        count(
+          parking
+            .filter((place) => place.parking_free)
+            .map((place) => place.author_id),
+        ),
+        "곳",
+      ),
+    },
+    {
+      title: "가장 많이 등록한 멤버",
+      rows: people(count(places.map((place) => place.author_id)), "곳"),
+    },
+    {
+      title: "이번 달 이용왕",
+      rows: people(
+        count(
+          logs
+            .filter((log) => monthOf(log.used_at) === month)
+            .map((log) => log.author_id),
+        ),
+        "회",
+      ),
+    },
+    {
+      title: "소통왕 (댓글)",
+      rows: people(count(comments.map((comment) => comment.author_id)), "개"),
+    },
+    {
+      title: "주차장이 가장 많은 구",
+      rows: count(
+        parking.flatMap((place) => {
+          const district = districtOf(place.address);
+          return district ? [district] : [];
+        }),
+      ).map(([district, value]) => ({
+        key: district,
+        name: district,
+        value: `${value}곳`,
+      })),
+    },
+    {
+      title: "새로 등록된 장소",
+      rows: newest.map((place) => ({
+        key: place.id,
+        name: place.name,
+        sub: place.category === "parking" ? "주차장" : "맛집",
+        value: `${Number(place.created_at.slice(5, 7))}월 ${Number(place.created_at.slice(8, 10))}일`,
+      })),
+    },
+  ];
+}
 
 export function kpiSummary(places: Place[], logs: UsageLog[], month: string) {
   const buckets = new Map<
